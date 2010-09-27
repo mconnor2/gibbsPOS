@@ -15,7 +15,6 @@ object gibbsPOS {
 		    nextID-1
 		}
 	    }
-	
 	def numID = nextID //Includes the 0th ID
     }
 
@@ -48,7 +47,7 @@ object gibbsPOS {
 	val nLabels = tagLex.numID
     }
 
-    class POSState (N: Int, pos: POSdata) {
+    class POSstate (N: Int, pos: POSdata) {
 	val assign = new ArrayBuffer[Int]
 	
 	//state t->t' transition count
@@ -65,7 +64,7 @@ object gibbsPOS {
 	//Initialize with uniformly random state assignments to all
 	// words
 	def initialize(r:Random) = {
-	    for (((w,t),i) <- pos.data.zipWithIndex) {
+	    for (((w,t),i) <- pos.data.view.zipWithIndex) {
 		val s = if (w == 0) 0 else r.nextInt(N)
 		assign += s
 		tCount += s
@@ -78,7 +77,7 @@ object gibbsPOS {
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
 	val posTxt = new POSdata(args(1))
-	val state = new POSState(args(0).toInt, posTxt)
+	val state = new POSstate(args(0).toInt+1, posTxt)
 	state.initialize(new Random)
 	println("Data: " + posTxt.data)
 	println("Assignment: "+state.assign)
