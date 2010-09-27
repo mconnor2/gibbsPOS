@@ -12,7 +12,7 @@ object gibbsPOS {
 		case Some(i) => i
 		case None => {
 		    map.put(n,nextID)
-		    nextID = nextID+1
+		    nextID += 1
 		    nextID-1
 		}
 	    }
@@ -23,9 +23,10 @@ object gibbsPOS {
     	val c = {val t = new ArrayBuffer[Int]
 		 for (i <- 0 until N) t += 0
 		 t}
+	var total = 0
 	def apply(n:Int):Int = c(n)
-	def +=(a:Int) = c.update(a,c(a)+1)
-	def -=(a:Int) = c.update(a,c(a)-1)
+	def +=(a:Int) = {total += 1; c.update(a,c(a)+1)}
+	def -=(a:Int) = {total -= 1; c.update(a,c(a)-1)}
     }
 
     class POSdata(file:String) {
@@ -114,13 +115,13 @@ object gibbsPOS {
     }
 
     //Converted from Aria Haghihi's standard ML code (as used elsewhere
-    def logSum (logs:Seq[Double]) : Double = {
-	val maxLog = logs.max
-	maxLog + log(logs.map(x => 
-		if (x-maxLog > -30) exp(x-maxLog) else 0).reduceLeft(_+_))
-    }
 
     def logNormalize (logs:Seq[Double]) = {
+	def logSum (logs:Seq[Double]) : Double = {
+	    val maxLog = logs.max
+	    maxLog + log(logs.map(x => 
+		if (x-maxLog > -30) exp(x-maxLog) else 0).reduceLeft(_+_))
+	}
 	val sum = logSum(logs)
 	for (x <- logs) yield exp(x-sum)
     }
@@ -154,6 +155,66 @@ object gibbsPOS {
     	for (((w,t),i) <- pos.data.view.zipWithIndex if w > 0) 
 	    updateState(w,i,state)
 
+    //For each state, find the tag it is seen with most often, and count
+    // that as correct
+    def manyToOne(tagMap:Seq[Counter]):Int = 
+	tagMap.foldLeft(0)(_+_.c.max)
+
+    // Variance of mutual information between tag clusters and state clusters
+    //
+    //  VI(Y,T) = H(Y|T) + H(T|Y)
+    //  H(Y|T) = H(Y) - I(Y,T)
+    //  H(T|Y) = H(T) - I(Y,T)
+    //  I(Y,T) = sum(p(y,t) log(p(y,t)/p(y)p(t))
+    //  H(Y) = -sum(p(y) log p(y))
+    //  H(T) = -sum(p(t) log p(t))
+    def VI(tagMap:Seq[Counter], tagCount:Counter, total:Int):Double = {
+	def entropy(p:Seq[Double]) = 
+	    -p.foldLeft(0.0)((b,x) => b+(if (x==0) 0.0 else x*log(x)/log(2.0)))
+
+	val py = for (y <- tagMap) yield (y.total.toDouble / total.toDouble)
+	val HY = entropy(py)
+    
+//	println("  PY: "+py)
+//	println("  HY: "+HY)
+
+	val pt = for (t <- tagCount.c) yield (t.toDouble / total.toDouble)
+	val HT = entropy(pt)
+	
+//	println("  PY: "+pt)
+//	println("  HY: "+HT)
+	
+	var IYT = 0.0
+	for ((y,i) <- py.view.zipWithIndex;
+	     (t,j) <- pt.view.zipWithIndex if y > 0) {
+	    val joint = tagMap(i)(j).toDouble / total.toDouble
+	    val indep = joint / (y*t)
+	    if (joint > 0) IYT += joint * log(indep)/log(2.0)
+	}
+
+	HY+HT-2.0*IYT
+    }
+
+    //Find the many to 1 matching and VI of the current assignment
+    // in respect to the true tagging in pos
+    def evaluate(state: POSstate, pos: POSdata) = {
+	//Find counts for mapping each tag to an HMM state
+	val tagMap = new ArrayBuffer[Counter]
+	for (i <- 0 until state.N) tagMap += new Counter(pos.nLabels)
+	
+	var length = 0
+	val tagCount = new Counter(pos.nLabels)
+    	for (((w,t),i) <- pos.data.view.zipWithIndex if w > 0) {
+	    tagMap(state.assign(i)) += t
+	    tagCount += t
+	    length += 1
+	}
+	
+	val manyError = manyToOne(tagMap)
+	val vi = VI(tagMap,tagCount,length)
+	(manyError.toDouble / length.toDouble, vi)
+    }
+
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
 	val posTxt = new POSdata(args(1))
@@ -161,7 +222,11 @@ object gibbsPOS {
 	state.initialize()
 	println("Data: " + posTxt.data)
 	println("Assignment: "+state.assign)
+	var err = evaluate(state, posTxt)
+	println("  Many to 1 error: "+err)
 	gibbs(state, posTxt)
 	println("Assignment: "+state.assign)
+	err = evaluate(state, posTxt)
+	println("  Many to 1 error: "+err)
     }
 }
