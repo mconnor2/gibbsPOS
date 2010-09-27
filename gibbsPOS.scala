@@ -57,7 +57,7 @@ object gibbsPOS {
 
 	//state t->word w transition count
 	val wEmit = new ArrayBuffer[Counter]
-	for (i <- 0 until N) tTrans += new Counter(pos.nWords)
+	for (i <- 0 until N) wEmit += new Counter(pos.nWords)
 
 	//state t count
 	val tCount = new Counter(N)
@@ -67,7 +67,7 @@ object gibbsPOS {
 	def initialize(r:Random) = {
 	    for (((w,t),i) <- pos.data.zipWithIndex) {
 		val s = if (w == 0) 0 else r.nextInt(N)
-		assign(i) += s
+		assign += s
 		tCount.inc(s)
 		wEmit(s).inc(w)
 		if (i > 0) {
@@ -80,6 +80,9 @@ object gibbsPOS {
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
 	val posTxt = new POSdata(args(1))
+	val state = new POSState(args(0).toInt, posTxt)
+	state.initialize(new Random)
 	println("Data: " + posTxt.data)
+	println("Assignment: "+state.assign)
     }
 }
