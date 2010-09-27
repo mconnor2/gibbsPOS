@@ -24,8 +24,8 @@ object gibbsPOS {
 		 for (i <- 0 until N) t += 0
 		 t}
 	def apply(n:Int):Int = c(n)
-	def inc(a:Int) = c.update(a,c(a)+1)
-	def dec(a:Int) = c.update(a,c(a)-1)
+	def +=(a:Int) = c.update(a,c(a)+1)
+	def -=(a:Int) = c.update(a,c(a)-1)
     }
 
     class POSdata(file:String) {
@@ -68,11 +68,9 @@ object gibbsPOS {
 	    for (((w,t),i) <- pos.data.zipWithIndex) {
 		val s = if (w == 0) 0 else r.nextInt(N)
 		assign += s
-		tCount.inc(s)
-		wEmit(s).inc(w)
-		if (i > 0) {
-		    tTrans(assign(i-1)).inc(s)
-		}
+		tCount += s
+		wEmit(s) += w
+		if (i > 0) tTrans(assign(i-1)) += s
 	    }
 	}
     }
