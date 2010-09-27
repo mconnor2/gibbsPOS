@@ -37,7 +37,7 @@ object gibbsPOS {
 	def POSColPair(line:String):(Int, Int) = {
 	    val cols = line.split("\\s+")
 	    if (cols.length < 2) (0,0)	
-	    else (tagLex(cols(0)), tagLex(cols(1)))
+	    else (wordLex(cols(0)), tagLex(cols(1)))
 	}
 
 	def load(source:Source):List[(Int, Int)] = 
