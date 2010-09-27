@@ -1,6 +1,7 @@
 import io.Source
 import collection.mutable.{HashMap, ArrayBuffer}
 import util.Random
+import scala.math.{log,exp}
 
 object gibbsPOS {
     class Lexicon[A] {
@@ -47,7 +48,10 @@ object gibbsPOS {
 	val nLabels = tagLex.numID
     }
 
-    class POSstate (N: Int, pos: POSdata) {
+    var emitP = 0.01
+    var transP = 0.1
+
+    class POSstate (val N: Int, pos: POSdata) {
 	val assign = new ArrayBuffer[Int]
 	
 	//state t->t' transition count
@@ -63,23 +67,101 @@ object gibbsPOS {
 
 	//Initialize with uniformly random state assignments to all
 	// words
-	def initialize(r:Random) = {
+	def initialize() = {
 	    for (((w,t),i) <- pos.data.view.zipWithIndex) {
-		val s = if (w == 0) 0 else r.nextInt(N)
+		val s = if (w == 0) 0 else (Random.nextInt(N-1)+1)
 		assign += s
 		tCount += s
 		wEmit(s) += w
 		if (i > 0) tTrans(assign(i-1)) += s
 	    }
 	}
+
+	//Remove state assignment at position i, which emits word w
+	def remove (w: Int, i: Int) : Unit = {
+	    tTrans(assign(i-1)) -= assign(i)
+	    tTrans(assign(i)) -= assign(i+1)
+	    tCount -= assign(i)
+	    wEmit(assign(i)) -= w
+	}
+
+	def add(w: Int, i:Int, s:Int) : Unit = {
+	    assign(i) = s
+	    tCount += s
+	    wEmit(s) += w
+	    if (i > 0) tTrans(assign(i-1)) += s
+	    if (i < assign.length-1) tTrans(s) += assign(i+1)
+	}
+
+	//Find log probability of selecting state s at position i, emitting
+	// word w
+	def logProb (w: Int, i: Int)(s:Int) : Double = {
+//	    println("Log probability of assigning state "+s+
+//		    " at index "+i+" emitting word "+w)
+	    var logP = log(tTrans(assign(i-1))(s) + transP) - 
+		       log(tCount(assign(i-1)) + N*transP)
+//	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
+	    logP += log(wEmit(s)(w) + emitP) - 
+		    log(tCount(s) + pos.nWords*emitP)
+//	    println("  "+wEmit(s)(w) + " emissions of w from s")
+	    logP += log(tTrans(s)(assign(i+1)) + 
+			(if (assign(i-1) == s && assign(i+1) == s) 1 else 0) +
+			transP) -
+		    log(tCount(s) + (if (assign(i-1) == s) 1 else 0) + N*transP)
+//	    println("  "+tTrans(s)(assign(i+1)) + " # transitions from s to +1")
+	    logP
+	}
     }
+
+    //Converted from Aria Haghihi's standard ML code (as used elsewhere
+    def logSum (logs:Seq[Double]) : Double = {
+	val maxLog = logs.max
+	maxLog + log(logs.map(x => 
+		if (x-maxLog > -30) exp(x-maxLog) else 0).reduceLeft(_+_))
+    }
+
+    def logNormalize (logs:Seq[Double]) = {
+	val sum = logSum(logs)
+	for (x <- logs) yield exp(x-sum)
+    }
+	
+    def sampleState (probs:Seq[Double]) = {
+	val p = Random.nextDouble
+	probs.view.scanLeft(0.0)(_+_).zipWithIndex.find(_._1 >= p) match {
+	    case None => throw new Error("Can't sample with p: "+p)
+	    case Some((p,i)) => i
+	}
+    }
+
+    def updateState(w: Int, i: Int, state: POSstate) = {
+//	println("Updating state for word "+i)
+	//Remove counts for current assignment
+	state.remove(w,i)
+	//Calculate probability of each state given surrounding and word
+	// and counts without it (up to normalizing)
+	val logProbs = (1 until state.N).map(state.logProb(w,i))
+//	println("Log probabilities: "+logProbs)
+//	val lognorm = logNormalize(logProbs)
+//	println("    normalized: "+lognorm)
+//	println("    sum: "+lognorm.reduceLeft(_+_))
+	//Sample from this to assign state
+	state.add(w, i, sampleState(logNormalize(logProbs)))
+    }
+    
+    //One pass through data, sampling state for each word from the P(t|t_-i,w)
+    // which is calculated from current state
+    def gibbs(state: POSstate, pos: POSdata) : Unit =
+    	for (((w,t),i) <- pos.data.view.zipWithIndex if w > 0) 
+	    updateState(w,i,state)
 
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
 	val posTxt = new POSdata(args(1))
 	val state = new POSstate(args(0).toInt+1, posTxt)
-	state.initialize(new Random)
+	state.initialize()
 	println("Data: " + posTxt.data)
+	println("Assignment: "+state.assign)
+	gibbs(state, posTxt)
 	println("Assignment: "+state.assign)
     }
 }
