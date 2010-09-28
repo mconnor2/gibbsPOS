@@ -220,13 +220,20 @@ object gibbsPOS {
 	val posTxt = new POSdata(args(1))
 	val state = new POSstate(args(0).toInt+1, posTxt)
 	state.initialize()
-	println("Data: " + posTxt.data)
-	println("Assignment: "+state.assign)
+//	println("Data: " + posTxt.data)
+//	println("Assignment: "+state.assign)
 	var err = evaluate(state, posTxt)
-	println("  Many to 1 error: "+err)
-	gibbs(state, posTxt)
-	println("Assignment: "+state.assign)
-	err = evaluate(state, posTxt)
-	println("  Many to 1 error: "+err)
+	
+	println("Iteration\tMany2One\tVI\tTime(ns)\n")
+	var iteration = 0
+	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+System.nanoTime)
+	while (iteration < 10000) {
+	    iteration += 1
+	    gibbs(state, posTxt)
+//	println("Assignment: "+state.assign)
+	    err = evaluate(state, posTxt)
+//	    println("  Many to 1 error: "+err)
+	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+System.nanoTime)
+	}
     }
 }
