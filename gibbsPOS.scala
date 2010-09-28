@@ -99,18 +99,18 @@ object gibbsPOS {
 	def logProb (w: Int, i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
-	    var logP = log(tTrans(assign(i-1))(s) + transP) - 
-		       log(tCount(assign(i-1)) + N*transP)
+	    val abefore = assign(i-1)
+	    val aafter = assign(i+1)
+	    var logP = log(tTrans(abefore)(s) + transP) - 
+		       log(tCount(abefore) + N*transP)
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
 	    logP += log(wEmit(s)(w) + emitP) - 
 		    log(tCount(s) + pos.nWords*emitP)
 //	    println("  "+wEmit(s)(w) + " emissions of w from s")
-	    logP += log(tTrans(s)(assign(i+1)) + 
-			(if (assign(i-1) == s && assign(i+1) == s) 1 else 0) +
-			transP) -
-		    log(tCount(s) + (if (assign(i-1) == s) 1 else 0) + N*transP)
+	    logP +  log(tTrans(s)(aafter) + 
+		        (if (abefore == s && aafter == s) 1 else 0) + transP) -
+		    log(tCount(s) + (if (abefore == s) 1 else 0) + N*transP)
 //	    println("  "+tTrans(s)(assign(i+1)) + " # transitions from s to +1")
-	    logP
 	}
     }
 
@@ -119,8 +119,8 @@ object gibbsPOS {
     def logNormalize (logs:Seq[Double]) = {
 	def logSum (logs:Seq[Double]) : Double = {
 	    val maxLog = logs.max
-	    maxLog + log(logs.map(x => 
-		if (x-maxLog > -30) exp(x-maxLog) else 0).reduceLeft(_+_))
+	    maxLog + log(logs.foldLeft(0.0)((b,x) => b +
+			    (if (x-maxLog > -30) exp(x-maxLog) else 0)))
 	}
 	val sum = logSum(logs)
 	for (x <- logs) yield exp(x-sum)
@@ -128,6 +128,8 @@ object gibbsPOS {
 	
     def sampleState (probs:Seq[Double]) = {
 	val p = Random.nextDouble
+	//Note that scanLeft includes a 0 at the beginning of the list, 
+	// which matches well with the special 0 state, which cannot be selected
 	probs.view.scanLeft(0.0)(_+_).zipWithIndex.find(_._1 >= p) match {
 	    case None => throw new Error("Can't sample with p: "+p)
 	    case Some((p,i)) => i
@@ -209,7 +211,7 @@ object gibbsPOS {
 	    tagCount += t
 	    length += 1
 	}
-	
+
 	val manyError = manyToOne(tagMap)
 	val vi = VI(tagMap,tagCount,length)
 	(manyError.toDouble / length.toDouble, vi)
@@ -224,16 +226,18 @@ object gibbsPOS {
 //	println("Assignment: "+state.assign)
 	var err = evaluate(state, posTxt)
 	
-	println("Iteration\tMany2One\tVI\tTime(ns)\n")
+	println("Iteration\tMany2One\tVI\tTime(s)")
 	var iteration = 0
-	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+System.nanoTime)
-	while (iteration < 10000) {
+	val startTime = System.nanoTime
+	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+0)
+	while (iteration < 5) {
 	    iteration += 1
 	    gibbs(state, posTxt)
 //	println("Assignment: "+state.assign)
 	    err = evaluate(state, posTxt)
 //	    println("  Many to 1 error: "+err)
-	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+System.nanoTime)
+	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+
+		    (System.nanoTime - startTime)/1e9.toDouble)
 	}
     }
 }
