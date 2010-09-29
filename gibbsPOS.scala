@@ -26,30 +26,36 @@ object gibbsPOS {
 	var total = 0
 	def apply(n:Int):Int = c(n)
 	def +=(a:Int) = {total += 1; c.update(a,c(a)+1)}
+	def ++=(s:Seq[Int]) = for (a <- s) {this += a}
 	def -=(a:Int) = {total -= 1; c.update(a,c(a)-1)}
+	def --=(s:Seq[Int]) = for (a <- s) {this -= a}
     }
 
     class POSdata(file:String) {
-	val wordLex = new Lexicon[String]
+	val featLexs = new ArrayBuffer[Lexicon[String]]
 	val tagLex = new Lexicon[String]
 
-	//Given a line from a column file, return (word id, tag id) pair
-	//  if a blank line return (0,0) special marker
-	def POSColPair(line:String):(Int, Int) = {
+	//Given a line from a column file, return (tag id, feature list) pair
+	//  if a blank line return (0,Nil) special marker
+	def POSColPair(line:String):(Int, List[Seq[Int]]) = {
 	    val cols = line.split("\\s+")
-	    if (cols.length < 2) (0,0)	
-	    else (wordLex(cols(0)), tagLex(cols(1)))
+	    if (cols.length < 2) (0,Nil)
+	    else (tagLex(cols(0)),
+		  cols.tail.zipWithIndex.map(p => {
+		      if (featLexs.length <= p._2) 
+			  featLexs += new Lexicon[String]
+		      p._1.split(',').map(featLexs(p._2).apply).toSeq
+		   }).toList)
 	}
 
-	def load(source:Source):List[(Int, Int)] = 
-	    List((0,0)) ++ source.getLines.map(POSColPair).toList
+	def load(source:Source):List[(Int, List[Seq[Int]])] = 
+	    List((0,Nil)) ++ source.getLines.map(POSColPair).toList
 	
 	val data = load(Source.fromFile(file))
-	val nWords = wordLex.numID
 	val nLabels = tagLex.numID
     }
 
-    var emitP = 0.01
+    var emitP = 0.001
     var transP = 0.1
 
     class POSstate (val N: Int, pos: POSdata) {
@@ -60,8 +66,12 @@ object gibbsPOS {
 	for (i <- 0 until N) tTrans += new Counter(N)
 
 	//state t->word w transition count
-	val wEmit = new ArrayBuffer[Counter]
-	for (i <- 0 until N) wEmit += new Counter(pos.nWords)
+	val wEmit = new ArrayBuffer[ArrayBuffer[Counter]]
+	for (i <- 0 until N) {
+	    wEmit += new ArrayBuffer[Counter]
+	    for (f <- pos.featLexs) 
+		wEmit(i) += new Counter(f.numID)
+	}
 
 	//state t count
 	val tCount = new Counter(N)
@@ -69,43 +79,46 @@ object gibbsPOS {
 	//Initialize with uniformly random state assignments to all
 	// words
 	def initialize() = {
-	    for (((w,t),i) <- pos.data.view.zipWithIndex) {
-		val s = if (w == 0) 0 else (Random.nextInt(N-1)+1)
+	    for (((t,wf),i) <- pos.data.view.zipWithIndex) {
+		val s = if (t == 0) 0 else (Random.nextInt(N-1)+1)
 		assign += s
 		tCount += s
-		wEmit(s) += w
+		for ((f,i) <- wf.zipWithIndex) wEmit(s)(i) ++= f
 		if (i > 0) tTrans(assign(i-1)) += s
 	    }
 	}
 
 	//Remove state assignment at position i, which emits word w
-	def remove (w: Int, i: Int) : Unit = {
+	def remove (wf: List[Seq[Int]], i: Int) : Unit = {
 	    tTrans(assign(i-1)) -= assign(i)
 	    tTrans(assign(i)) -= assign(i+1)
 	    tCount -= assign(i)
-	    wEmit(assign(i)) -= w
+	    for ((f,j) <- wf.zipWithIndex) wEmit(assign(i))(j) --= f
 	}
 
-	def add(w: Int, i:Int, s:Int) : Unit = {
+	def add(wf: List[Seq[Int]], i:Int, s:Int) : Unit = {
 	    assign(i) = s
 	    tCount += s
-	    wEmit(s) += w
+	    for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) ++= f
 	    if (i > 0) tTrans(assign(i-1)) += s
 	    if (i < assign.length-1) tTrans(s) += assign(i+1)
 	}
 
 	//Find log probability of selecting state s at position i, emitting
 	// word w
-	def logProb (w: Int, i: Int)(s:Int) : Double = {
+	def logProb (wf: List[Seq[Int]], i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
 	    val abefore = assign(i-1)
 	    val aafter = assign(i+1)
 	    var logP = log(tTrans(abefore)(s) + transP) - 
 		       log(tCount(abefore) + N*transP)
+
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
-	    logP += log(wEmit(s)(w) + emitP) - 
-		    log(tCount(s) + pos.nWords*emitP)
+	    for ((f,j) <- wf.zipWithIndex; v <- f) 
+		logP += log(wEmit(s)(j)(v) + emitP) - 
+			log(wEmit(s)(j).total + pos.featLexs(j).numID*emitP)
+
 //	    println("  "+wEmit(s)(w) + " emissions of w from s")
 	    logP +  log(tTrans(s)(aafter) + 
 		        (if (abefore == s && aafter == s) 1 else 0) + transP) -
@@ -136,26 +149,26 @@ object gibbsPOS {
 	}
     }
 
-    def updateState(w: Int, i: Int, state: POSstate) = {
+    def updateState(wf: List[Seq[Int]], i: Int, state: POSstate) = {
 //	println("Updating state for word "+i)
 	//Remove counts for current assignment
-	state.remove(w,i)
+	state.remove(wf,i)
 	//Calculate probability of each state given surrounding and word
 	// and counts without it (up to normalizing)
-	val logProbs = (1 until state.N).map(state.logProb(w,i))
+	val logProbs = (1 until state.N).map(state.logProb(wf,i))
 //	println("Log probabilities: "+logProbs)
 //	val lognorm = logNormalize(logProbs)
 //	println("    normalized: "+lognorm)
 //	println("    sum: "+lognorm.reduceLeft(_+_))
 	//Sample from this to assign state
-	state.add(w, i, sampleState(logNormalize(logProbs)))
+	state.add(wf, i, sampleState(logNormalize(logProbs)))
     }
     
     //One pass through data, sampling state for each word from the P(t|t_-i,w)
     // which is calculated from current state
     def gibbs(state: POSstate, pos: POSdata) : Unit =
-    	for (((w,t),i) <- pos.data.view.zipWithIndex if w > 0) 
-	    updateState(w,i,state)
+    	for (((t,wf),i) <- pos.data.view.zipWithIndex if t > 0) 
+	    updateState(wf,i,state)
 
     //For each state, find the tag it is seen with most often, and count
     // that as correct
@@ -206,7 +219,7 @@ object gibbsPOS {
 	
 	var length = 0
 	val tagCount = new Counter(pos.nLabels)
-    	for (((w,t),i) <- pos.data.view.zipWithIndex if w > 0) {
+    	for (((t,wf),i) <- pos.data.view.zipWithIndex if t > 0) {
 	    tagMap(state.assign(i)) += t
 	    tagCount += t
 	    length += 1
@@ -220,6 +233,8 @@ object gibbsPOS {
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
 	val posTxt = new POSdata(args(1))
+//	println("Loaded "+posTxt.featLexs.length+" feature sets.")
+	
 	val state = new POSstate(args(0).toInt+1, posTxt)
 	state.initialize()
 //	println("Data: " + posTxt.data)
@@ -230,10 +245,10 @@ object gibbsPOS {
 	var iteration = 0
 	val startTime = System.nanoTime
 	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+0)
-	while (iteration < 5) {
+	while (iteration < 10000) {
 	    iteration += 1
 	    gibbs(state, posTxt)
-//	println("Assignment: "+state.assign)
+//	    println("Assignment: "+state.assign)
 	    err = evaluate(state, posTxt)
 //	    println("  Many to 1 error: "+err)
 	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+
