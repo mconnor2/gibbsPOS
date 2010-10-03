@@ -149,20 +149,25 @@ object gibbsPOS {
 	def logProb (wf: List[Seq[Int]], i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
-	    val abefore = assign(i-1)
-	    val aafter = assign(i+1)
-	    var logP = log(tTrans(abefore)(s) + transP(abefore))
+	    
+	    var logP = tTrans(assign(i-1)).logP(s)
+	    //var logP = log(tTrans(abefore)(s) + transP(abefore))
 		  //   log(tCount(abefore) + N*transP(abefore)) //XXX Constant
 
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
 	    for ((f,j) <- wf.zipWithIndex; v <- f) 
-		logP += log(wEmit(s)(j)(v) + emitP(s)) - 
-			log(wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
+		logP += wEmit(s)(j).logP(v) - wEmit(s)(j).totalP
+		//logP += log(wEmit(s)(j)(v) + emitP(s)) - 
+		//	log(wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
 
 //	    println("  "+wEmit(s)(w) + " emissions of w from s")
-	    logP +  log(tTrans(s)(aafter) + 
-		        (if (abefore==s && aafter==s) 1 else 0) + transP(s))-
-		    log(tCount(s) + (if (abefore==s) 1 else 0) + N*transP(s))
+	    if (assign(i-1) != s) {
+		logP + tTrans(s).logP(assign(i+1)) - tTrans(s).totalP
+	    } else {
+		logP -= log(tCount(s) + 1 + N*transP(s))
+		logP + (if (assign(i+1) != s) tTrans(s).logP(assign(i+1))
+		        else log(tTrans(s)(assign(i+1)) + 1 + transP(s)))
+	    }
 //	    println("  "+tTrans(s)(assign(i+1)) + " # transitions from s to +1")
 	}
     }
