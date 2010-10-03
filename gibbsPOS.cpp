@@ -12,6 +12,8 @@
 #include <cstdlib>
 #include <ctime>
 
+#include <boost/tokenizer.hpp>
+
 /*
 #include "tbb/tbb.h"
 #include "tbb/parallel_for.h"
@@ -27,8 +29,8 @@ typedef pair<int, int> tags;
 typedef vector<tags> tagged;
 
 int N = -1;
-double emitP = 0.001;
-double transP = 0.1;
+vector<double> emitP;
+vector<double> transP;
 
 class Lexicon {
     public:
@@ -62,14 +64,18 @@ class Lexicon {
 
 class Counter {
     public:
-	Counter(int _N, double _prior = -1) : 
-	    N(_N), total(0), totalP(0), c(_N), lp(_N), prior(_prior) {}
+	Counter(int _N, double _prior = -1.0) : 
+	    N(_N), total(0), totalP(0), c(_N), prior(_prior), lp(_N) 
+	{
+	    if (prior > 0)
+		fill(lp.begin(), lp.end(), log(prior));
+	}
 	
 	int add (int id) {
 	    c[id]++;
 	    total++;
 	    
-	    if (prior > 0) {
+	    if (prior > 0.0) {
 		lp[id] = log(c[id] + prior);
 		totalP = log(total + N*prior);
 	    }
@@ -79,7 +85,7 @@ class Counter {
 	    c[id]--;
 	    total--;
 	    
-	    if (prior > 0) {
+	    if (prior > 0.0) {
 		lp[id] = log(c[id] + prior);
 		totalP = log(total + N*prior);
 	    }
@@ -95,17 +101,45 @@ class Counter {
 	}
 
 	inline int count(int id) const {return c[id];}
-	inline int prob(int id) const {return lp[id];}
+	inline double prob(int id) const {return lp[id];}
 
 	inline int max() const {return *max_element(c.begin(), c.end());}
 
 	int N, total;
 	double totalP;
+	double prior;
     private:
 	vector<int> c;
 	vector<double> lp;
-	double prior;
 };
+                
+void parsePrior(const string &optarg, vector<double> &prior) {
+    typedef boost::tokenizer<boost::char_separator<char> > tokenizer;
+    boost::char_separator<char> sep(",");
+    tokenizer tokens(optarg, sep);
+
+    int ind = 0;
+    for (tokenizer::iterator tok_iter = tokens.begin();
+	 tok_iter != tokens.end(); ++tok_iter) 
+    {
+	string s = *tok_iter;
+//	cout<<" Parsing token: "<<s<<endl;
+	size_t c = s.find(':');
+	if (c == string::npos) {
+	    //no :, so fill rest of with value
+	    double v = atof(s.c_str());
+//	    cout<<"  fill rest of values with "<<v<<endl;
+	    for (int i = ind; i<N; ++i) prior.push_back(v);
+	    break; //there shouldn't be any more prior specification
+	} else {
+	    int a = atoi(s.substr(0,c).c_str());
+	    double v = atof(s.substr(c+1).c_str());
+//	    cout<<"  "<<a<<" values of "<<v<<endl;
+	    for (int i = 0; i<a; ++i) prior.push_back(v);
+	    ind += c;
+	}
+    }
+}
 
 
 bool loadTrain(const char* filename, 
@@ -153,7 +187,7 @@ void initializeState(const tagged &posData,
 	if (posData[i].first != 0) {
 	    rTag = rand_int()%(N-1)+1;
 	}
-
+	
 	assignments[i] = rTag;
 	//tag->word
 	eCount[rTag]->add(posData[i].second);
@@ -164,24 +198,24 @@ void initializeState(const tagged &posData,
     }
 }
 
-void removeState(int s, int w,
+void removeState(int i, int w,
 		 const vector<int> &assignments,
 		 vector<Counter *> &tCount,
 		 vector<Counter *> &eCount)
 {
-    tCount[assignments[s-1]]->remove(assignments[s]);
-    tCount[assignments[s]]->remove(assignments[s+1]);
-    eCount[assignments[s]]->remove(w);
+    tCount[assignments[i-1]]->remove(assignments[i]);
+    tCount[assignments[i]]->remove(assignments[i+1]);
+    eCount[assignments[i]]->remove(w);
 }
 
-void addState(int s, int w,
+void addState(int i, int w,
 	      const vector<int> &assignments,
 	      vector<Counter *> &tCount,
 	      vector<Counter *> &eCount)
 {
-    tCount[assignments[s-1]]->add(assignments[s]);
-    tCount[assignments[s]]->add(assignments[s+1]);
-    eCount[assignments[s]]->add(w);
+    tCount[assignments[i-1]]->add(assignments[i]);
+    tCount[assignments[i]]->add(assignments[i+1]);
+    eCount[assignments[i]]->add(w);
 }
 
 inline double logProbState(int state, int word, int prevS, int nextS,
@@ -189,24 +223,38 @@ inline double logProbState(int state, int word, int prevS, int nextS,
 			    const vector<Counter *> &eCount)
 {
     double lp = tCount[prevS]->prob(state);
-    //double lp = log(tCount[prevS]->count(state) + transP);
+    //double lp = log(tCount[prevS]->count(state) + transP[prevS]);
 //		log(tCount[prevS]->total + N*transP); //XXX Constant
 
+/*
+    assert(eCount[state]->prior == emitP[state]);
+    cout<<"State: "<<state<<endl;
+    cout<<"  count: "<<eCount[state]->count(word)<<endl;
+    cout<<"  prior: "<<eCount[state]->prior<<" == "<<emitP[state]<<endl;
+    cout<<"  precomp: "<<eCount[state]->prob(word)<<endl;
+    cout<<"  real: "<<log(eCount[state]->count(word) + emitP[state])<<endl;
+    assert(eCount[state]->prob(word) ==
+	   log(eCount[state]->count(word) + emitP[state]));
+*/
     lp += eCount[state]->prob(word) - eCount[state]->totalP;
-    //lp += log(eCount[state]->count(word) + emitP) - 
-	  //log(eCount[state]->total + eCount[state]->N*emitP);
+    //lp += log(eCount[state]->count(word) + emitP[state]) - 
+    //	  log(eCount[state]->total + eCount[state]->N*emitP[state]);
 
 //   println("  "+wEmit(s)(w) + " emissions of w from s")
+
     if (prevS!=state) {
 	lp += tCount[state]->prob(nextS) - tCount[state]->totalP;
     } else {
 	if (nextS != state) {
 	    lp += tCount[state]->prob(nextS);
 	} else {
-	    lp += log(tCount[state]->count(nextS) + 1 + transP);
+	    lp += log(tCount[state]->count(nextS) + 1 + transP[state]);
 	}
-	lp -= log(tCount[state]->total + 1 + N*transP);
+	lp -= log(tCount[state]->total + 1 + N*transP[state]);
     }
+    //lp += log(tCount[state]->count(nextS) + 
+    //	      (prevS == state and nextS == state) + transP[state]) -
+    //	  log(cCount.count(state) + (prevS==state) + N*transP[state]);
 
     return lp;
 }
@@ -233,9 +281,11 @@ double logNormalize(vector<double> &logProbs) {
 
 int sample(const vector<double> &probs, const double logSum) {
     double p = rand_double();
+//    double p = rand()/(RAND_MAX+1.0);
     for (int i = 0; i<probs.size(); ++i) {
+//	double pi = probs[i];
 	double pi = exp(probs[i] - logSum);
-	if (p <= pi) return i;
+	if (p < pi) return i;
 	p -= pi;
     }
     return -1;
@@ -308,8 +358,9 @@ void updateGibbs(const tagged& posData, vector<int> &assignments,
 		 vector<Counter *> &eCount)
 {
     for (int i = 0; i<posData.size(); ++i) {
-	if (posData[i].second != 0)
+	if (posData[i].second != 0) {
 	    updateGibbs(i, posData[i].second, assignments, tCount, eCount);
+	}
     }
 }
 
@@ -385,6 +436,7 @@ void printEvaluateState(const vector<int> &assignments,
     for (int i = 0; i<assignments.size(); ++i) 
 	if (posData[i].first != 0) {
 	    words++;
+	    assert(assignments[i] > 0);
 //	    cout<<i<<": "<<assignments[i]<<" -> "<<posData[i].first<<"?"<<endl;
 	    tagMap[assignments[i]]->add(posData[i].first);
 	    labelCount->add(posData[i].first);
@@ -403,15 +455,22 @@ int main (int argc, char **argv) {
     
     Lexicon tagLex, wordLex;
     tagged posData;
+    
+    bool setEPrior = false, setTPrior = false;
+    string ePriorString, tPriorString;
 
     int c;
     while ((c = getopt(argc, argv, "f:e:t:i:N:h?")) != -1) {
         switch (c) {
             case 'e':
-                emitP = atof(optarg);
+		setEPrior = true;
+		ePriorString = optarg;
+                //parsePrior(optarg, emitP);
                 break;
             case 't':
-                transP = atof(optarg);
+		setTPrior = true;
+		tPriorString = optarg;
+                //parsePrior(optarg, transP);
                 break;
             case 'f':
                 loadFile = loadTrain(optarg, posData, tagLex, wordLex);
@@ -443,6 +502,15 @@ int main (int argc, char **argv) {
     //for 0th reserved state, horrible hack that will introduce countless bugs
     N+=1;
 
+    if (setEPrior) {
+//	cout<<"Loading emission prior"<<endl;
+	parsePrior(ePriorString, emitP);
+    }
+    if (setTPrior) {
+//	cout<<"Loading transition prior"<<endl;
+	parsePrior(tPriorString, transP);
+    }
+
     vector<int> assignments(posData.size());
     vector<Counter *> tCount(N);
     vector<Counter *> eCount(N);
@@ -450,9 +518,12 @@ int main (int argc, char **argv) {
     int nWords = wordLex.numID();
     int nLabels = tagLex.numID();
 
+    cout<<"nLabels = "<<nLabels<<endl;
+    cout<<"nWords = "<<nWords<<endl;
+
     for (int i = 0; i<N; ++i) {
-	tCount[i] = new Counter(N, transP);
-	eCount[i] = new Counter(nWords, emitP);
+	tCount[i] = new Counter(N, transP[i]);
+	eCount[i] = new Counter(nWords, emitP[i]);
     }
 
     initializeState(posData,assignments,tCount,eCount);
