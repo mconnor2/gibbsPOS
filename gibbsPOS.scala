@@ -5,17 +5,22 @@ import scala.math.{log,exp}
 
 object gibbsPOS {
     class Lexicon[A] {
-	val map = new HashMap[A,Int]()
+	val map = new HashMap[A,Int]
+	val revMap = new ArrayBuffer[A]
 	private var nextID = 1
 	def apply(n:A):Int = 
 	    map.get(n) match {
 		case Some(i) => i
 		case None => {
 		    map.put(n,nextID)
+		    revMap += n
 		    nextID += 1
 		    nextID-1
 		}
 	    }
+	def rev(n:Int):Option[A] = 
+	    if (n > 0) Some(revMap(n-1)) else None
+	
 	def numID = nextID //Includes the 0th ID
     }
 
@@ -55,8 +60,30 @@ object gibbsPOS {
 	val nLabels = tagLex.numID
     }
 
-    var emitP = 0.001
-    var transP = 0.1
+    var emitP = Array.empty[Double]
+    var transP= Array.empty[Double]
+
+    //Parse prior specification of type n1:v1,n2:v2,v3
+    //  which gives block structure of n1 copies of v1, n2 of v2, N-n1-n2 of v3
+    //  Does no checking to make sure well formed or adds up to N
+    def parsePrior(string: String, N: Int):Array[Double] = {
+	if (!string.contains(':')) Array.fill(N)(string.toDouble)
+	else {
+	    val p = new Array[Double](N)
+	    var ind = 0
+	    for (s <- string.split(',')) {
+		if (!s.contains(':')) 
+		    for (i <- (ind until N)) p(i) = s.toDouble
+		else {
+		    //case of n:v
+		    val v = s.split(':')
+		    for (i <- (0 until v(0).toInt)) p(i+ind) = v(1).toDouble
+		    ind += v(0).toInt
+		}
+	    }
+	    p
+	}
+    }
 
     class POSstate (val N: Int, pos: POSdata) {
 	val assign = new ArrayBuffer[Int]
@@ -111,18 +138,18 @@ object gibbsPOS {
 //		    " at index "+i+" emitting word "+w)
 	    val abefore = assign(i-1)
 	    val aafter = assign(i+1)
-	    var logP = log(tTrans(abefore)(s) + transP) - 
-		       log(tCount(abefore) + N*transP)
+	    var logP = log(tTrans(abefore)(s) + transP(abefore))
+		  //   log(tCount(abefore) + N*transP(abefore)) //XXX Constant
 
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
 	    for ((f,j) <- wf.zipWithIndex; v <- f) 
-		logP += log(wEmit(s)(j)(v) + emitP) - 
-			log(wEmit(s)(j).total + pos.featLexs(j).numID*emitP)
+		logP += log(wEmit(s)(j)(v) + emitP(s)) - 
+			log(wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
 
 //	    println("  "+wEmit(s)(w) + " emissions of w from s")
 	    logP +  log(tTrans(s)(aafter) + 
-		        (if (abefore == s && aafter == s) 1 else 0) + transP) -
-		    log(tCount(s) + (if (abefore == s) 1 else 0) + N*transP)
+		        (if (abefore==s && aafter==s) 1 else 0) + transP(s))-
+		    log(tCount(s) + (if (abefore==s) 1 else 0) + N*transP(s))
 //	    println("  "+tTrans(s)(assign(i+1)) + " # transitions from s to +1")
 	}
     }
@@ -230,12 +257,100 @@ object gibbsPOS {
 	(manyError.toDouble / length.toDouble, vi)
     }
 
+    def stateStats(state: POSstate, pos: POSdata) = {
+	def printTopN[A](N:Int, count: Counter, lex: Lexicon[A]) {
+	    for (t <- (1 until lex.numID).
+			sortWith((a,b) => count(a) > count(b)).take(N)) {
+		lex.rev(t) match {
+		    case Some(s) => print(" "+s)
+		    case None => print(" ???")
+		}
+		print("("+count(t)+")")
+	    }
+	}
+
+	def printStats(s: Int, tags: Counter, words: Counter) = {
+	    println("State "+s+": ")
+	    println("  "+tags.total+" occurences")
+	    println("  "+tags.c.count(_>0)+" unique POS tags")
+	    println("  "+words.c.count(_>0)+" unique Words")
+	    
+	    print("  Top 10 tags:")
+	    printTopN(10,tags, pos.tagLex)
+	    println()
+	    
+	    print("  Top 10 words:")
+	    printTopN(10, words, pos.featLexs(0))
+	    println()
+	}
+
+	//Find counts for mapping each tag to an HMM state
+	val tagMap = new ArrayBuffer[Counter]
+	val wordMap = new ArrayBuffer[Counter]
+	for (i <- 0 until state.N) {
+	    tagMap += new Counter(pos.nLabels)
+	    wordMap += new Counter(pos.featLexs(0).numID)
+	}
+    	
+	for (((t,wf),s) <- pos.data.view.zip(state.assign) if t > 0) {
+	    tagMap(s) += t
+	    wordMap(s) ++= wf.head
+	}
+	
+	for (i <- 1 until state.N) 
+	    printStats(i, tagMap(i), wordMap(i))
+    }
+
     def main(args: Array[String]): Unit = {
 	if (args.length < 1) throw new Error("Usage: gibbsPOS <N> <POS col>")
-	val posTxt = new POSdata(args(1))
+	val arglist = args.toList
+	type OptionMap = Map[Symbol, String]
+
+	var maxIter = 10000
+
+	def nextOption(map : OptionMap, list: List[String]) : OptionMap = {
+	    def isSwitch(s : String) = (s(0) == '-')
+	    list match {
+		case Nil => map
+		case "-N" :: value :: tail => 
+                    nextOption(map ++ Map('N -> value), tail)
+		case "-emit" :: value :: tail => 
+                    nextOption(map ++ Map('emit -> value), tail)
+		case "-trans" :: value :: tail => 
+                    nextOption(map ++ Map('trans -> value), tail)
+		case "-iter" :: value :: tail => 
+		    {maxIter = value.toInt; nextOption(map, tail)}
+		case string :: opt2 :: tail if isSwitch(opt2) => 
+                    nextOption(map ++ Map('infile -> string), list.tail)
+		case string :: Nil =>  
+		    nextOption(map ++ Map('infile -> string), list.tail)
+		case option :: tail => {
+		    println("Unknown option "+option) 
+                    exit(1)
+		}
+	    }
+	}
+	val options = nextOption(Map(),arglist)
+	println(options)
+
+	if (!options.contains('N) || !options.contains('emit) ||
+	    !options.contains('trans) || !options.contains('infile)) {
+	    println("Must specify N, emission and transition prior, plus infile")
+	    exit(1)
+	}
+
+	val N = options('N).toInt
+
+	emitP = parsePrior(options('emit), N+1)
+	transP = parsePrior(options('trans), N+1)
+
+//	println("Emit: "+emitP.length)
+//	println("Trans: "+transP.length)
+
+	val posTxt = new POSdata(options('infile).toString)
 //	println("Loaded "+posTxt.featLexs.length+" feature sets.")
 	
-	val state = new POSstate(args(0).toInt+1, posTxt)
+	val state = new POSstate(N+1, posTxt)
 	state.initialize()
 //	println("Data: " + posTxt.data)
 //	println("Assignment: "+state.assign)
@@ -245,7 +360,7 @@ object gibbsPOS {
 	var iteration = 0
 	val startTime = System.nanoTime
 	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+0)
-	while (iteration < 10000) {
+	while (iteration < maxIter)  {
 	    iteration += 1
 	    gibbs(state, posTxt)
 //	    println("Assignment: "+state.assign)
@@ -254,5 +369,6 @@ object gibbsPOS {
 	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+
 		    (System.nanoTime - startTime)/1e9.toDouble)
 	}
+	stateStats(state, posTxt)
     }
 }
