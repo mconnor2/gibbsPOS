@@ -55,18 +55,18 @@ object gibbsPOS {
 
 	//Given a line from a column file, return (tag id, feature list) pair
 	//  if a blank line return (0,Nil) special marker
-	def POSColPair(line:String):(Int, List[Seq[Int]]) = {
+	def POSColPair(line:String):(Int, List[Int]) = {
 	    val cols = line.split("\\s+")
 	    if (cols.length < 2) (0,Nil)
 	    else (tagLex(cols(0)),
 		  cols.tail.zipWithIndex.map(p => {
 		      if (featLexs.length <= p._2) 
 			  featLexs += new Lexicon[String]
-		      p._1.split(',').map(featLexs(p._2).apply).toSeq
-		   }).toList)
+//		      p._1.split(',').map(featLexs(p._2).apply).toSeq
+		      featLexs(p._2)(p._1)}).toList)
 	}
 
-	def load(source:Source):List[(Int, List[Seq[Int]])] = 
+	def load(source:Source):List[(Int, List[Int])] = 
 	    List((0,Nil)) ++ source.getLines.map(POSColPair).toList
 	
 	val data = load(Source.fromFile(file))
@@ -123,30 +123,30 @@ object gibbsPOS {
 		val s = if (t == 0) 0 else (Random.nextInt(N-1)+1)
 		assign += s
 		tCount += s
-		for ((f,i) <- wf.zipWithIndex) wEmit(s)(i) ++= f
+		for ((f,i) <- wf.zipWithIndex) wEmit(s)(i) += f
 		if (i > 0) tTrans(assign(i-1)) += s
 	    }
 	}
 
 	//Remove state assignment at position i, which emits word w
-	def remove (wf: List[Seq[Int]], i: Int) : Unit = {
+	def remove (wf: List[Int], i: Int) : Unit = {
 	    tTrans(assign(i-1)) -= assign(i)
 	    tTrans(assign(i)) -= assign(i+1)
 	    tCount -= assign(i)
-	    for ((f,j) <- wf.zipWithIndex) wEmit(assign(i))(j) --= f
+	    for ((f,j) <- wf.zipWithIndex) wEmit(assign(i))(j) -= f
 	}
 
-	def add(wf: List[Seq[Int]], i:Int, s:Int) : Unit = {
+	def add(wf: List[Int], i:Int, s:Int) : Unit = {
 	    assign(i) = s
 	    tCount += s
-	    for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) ++= f
+	    for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) += f
 	    if (i > 0) tTrans(assign(i-1)) += s
 	    if (i < assign.length-1) tTrans(s) += assign(i+1)
 	}
 
 	//Find log probability of selecting state s at position i, emitting
 	// word w
-	def logProb (wf: List[Seq[Int]], i: Int)(s:Int) : Double = {
+	def logProb (wf: List[Int], i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
 	    
@@ -155,8 +155,8 @@ object gibbsPOS {
 		  //   log(tCount(abefore) + N*transP(abefore)) //XXX Constant
 
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
-	    for ((f,j) <- wf.zipWithIndex; v <- f) 
-		logP += wEmit(s)(j).logP(v) - wEmit(s)(j).totalP
+	    for ((f,j) <- wf.zipWithIndex) 
+		logP += wEmit(s)(j).logP(f) - wEmit(s)(j).totalP
 		//logP += log(wEmit(s)(j)(v) + emitP(s)) - 
 		//	log(wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
 
@@ -194,7 +194,7 @@ object gibbsPOS {
 	}
     }
 
-    def updateState(wf: List[Seq[Int]], i: Int, state: POSstate) = {
+    def updateState(wf: List[Int], i: Int, state: POSstate) = {
 //	println("Updating state for word "+i)
 	//Remove counts for current assignment
 	state.remove(wf,i)
@@ -312,7 +312,7 @@ object gibbsPOS {
     	
 	for (((t,wf),s) <- pos.data.view.zip(state.assign) if t > 0) {
 	    tagMap(s) += t
-	    wordMap(s) ++= wf.head
+	    wordMap(s) += wf.head
 	}
 	
 	for (i <- 1 until state.N) 
