@@ -24,15 +24,28 @@ object gibbsPOS {
 	def numID = nextID //Includes the 0th ID
     }
 
-    class Counter(N:Int) {
-    	val c = {val t = new ArrayBuffer[Int]
-		 for (i <- 0 until N) t += 0
-		 t}
+    class Counter(N:Int, prior:Double) {
+    	val c = new Array[Int](N)
+    	val lp = new Array[Double](N)
 	var total = 0
-	def apply(n:Int):Int = c(n)
-	def +=(a:Int) = {total += 1; c.update(a,c(a)+1)}
+	var totalP = 0.0
+
+	def apply(n:Int) = c(n)
+	def logP(n:Int) = lp(n)
+
+	def +=(a:Int) = {
+	    total += 1; 
+	    c(a) = c(a) + 1
+	    totalP = log(total + N*prior)
+	    lp(a) = log(c(a) + prior)
+	}
 	def ++=(s:Seq[Int]) = for (a <- s) {this += a}
-	def -=(a:Int) = {total -= 1; c.update(a,c(a)-1)}
+	def -=(a:Int) = {
+	    total -= 1
+	    c(a) = c(a)-1
+	    totalP = log(total + N*prior)
+	    lp(a) = log(c(a) + prior)
+	}
 	def --=(s:Seq[Int]) = for (a <- s) {this -= a}
     }
 
@@ -90,18 +103,18 @@ object gibbsPOS {
 	
 	//state t->t' transition count
 	val tTrans = new ArrayBuffer[Counter]
-	for (i <- 0 until N) tTrans += new Counter(N)
+	for (i <- 0 until N) tTrans += new Counter(N, transP(i))
 
 	//state t->word w transition count
 	val wEmit = new ArrayBuffer[ArrayBuffer[Counter]]
 	for (i <- 0 until N) {
 	    wEmit += new ArrayBuffer[Counter]
 	    for (f <- pos.featLexs) 
-		wEmit(i) += new Counter(f.numID)
+		wEmit(i) += new Counter(f.numID, emitP(i))
 	}
 
 	//state t count
-	val tCount = new Counter(N)
+	val tCount = new Counter(N,0.0)
 
 	//Initialize with uniformly random state assignments to all
 	// words
@@ -242,10 +255,10 @@ object gibbsPOS {
     def evaluate(state: POSstate, pos: POSdata) = {
 	//Find counts for mapping each tag to an HMM state
 	val tagMap = new ArrayBuffer[Counter]
-	for (i <- 0 until state.N) tagMap += new Counter(pos.nLabels)
+	for (i <- 0 until state.N) tagMap += new Counter(pos.nLabels, 0.0)
 	
 	var length = 0
-	val tagCount = new Counter(pos.nLabels)
+	val tagCount = new Counter(pos.nLabels, 0.0)
     	for (((t,wf),i) <- pos.data.view.zipWithIndex if t > 0) {
 	    tagMap(state.assign(i)) += t
 	    tagCount += t
@@ -288,8 +301,8 @@ object gibbsPOS {
 	val tagMap = new ArrayBuffer[Counter]
 	val wordMap = new ArrayBuffer[Counter]
 	for (i <- 0 until state.N) {
-	    tagMap += new Counter(pos.nLabels)
-	    wordMap += new Counter(pos.featLexs(0).numID)
+	    tagMap += new Counter(pos.nLabels, 0.0)
+	    wordMap += new Counter(pos.featLexs(0).numID, 0.0)
 	}
     	
 	for (((t,wf),s) <- pos.data.view.zip(state.assign) if t > 0) {
