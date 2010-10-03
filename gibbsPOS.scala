@@ -27,6 +27,8 @@ object gibbsPOS {
     class Counter(N:Int, prior:Double) {
     	val c = new Array[Int](N)
     	val lp = new Array[Double](N)
+//    	val c = ArrayBuffer.fill[Int](N)(0)
+//    	val lp = ArrayBuffer.fill[Double](N)(0.0)
 	var total = 0
 	var totalP = 0.0
 
