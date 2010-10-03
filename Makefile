@@ -1,8 +1,12 @@
 CFLAGS = -O2 -march=core2
-CFLAGS += -std=gnu++0x -g -pg
+CFLAGS += -std=c++0x -g
 #CFLAGS += -D_DEBUG_PRINT
 
+#LIBS = -ltbb
+
 CXX = g++ 
+#CXX = /opt/intel/cc/10.1.012/bin/icc
+#CXX = icc
 
 TARGETS = gibbsPOScpp
 SRCS = random.cpp gibbsPOS.cpp 

@@ -12,6 +12,12 @@
 #include <cstdlib>
 #include <ctime>
 
+/*
+#include "tbb/tbb.h"
+#include "tbb/parallel_for.h"
+using namespace tbb;
+*/
+
 #include "random.h"
 
 using namespace std;
@@ -56,23 +62,27 @@ class Lexicon {
 
 class Counter {
     public:
-	Counter(int _N, double _prior = transP) : 
+	Counter(int _N, double _prior = -1) : 
 	    N(_N), total(0), totalP(0), c(_N), lp(_N), prior(_prior) {}
 	
 	int add (int id) {
 	    c[id]++;
 	    total++;
 	    
-	    lp[id] = log(c[id] + prior);
-	    totalP = log(total + N*prior);
+	    if (prior > 0) {
+		lp[id] = log(c[id] + prior);
+		totalP = log(total + N*prior);
+	    }
 	}
 	
 	int remove(int id) {
 	    c[id]--;
 	    total--;
 	    
-	    lp[id] = log(c[id] + prior);
-	    totalP = log(total + N*prior);
+	    if (prior > 0) {
+		lp[id] = log(c[id] + prior);
+		totalP = log(total + N*prior);
+	    }
 	}
 	
 	void reset () {
@@ -174,9 +184,9 @@ void addState(int s, int w,
     eCount[assignments[s]]->add(w);
 }
 
-double logProbState(int state, int word, int prevS, int nextS,
-		    const vector<Counter *> &tCount, 
-		    const vector<Counter *> &eCount)
+inline double logProbState(int state, int word, int prevS, int nextS,
+			    const vector<Counter *> &tCount, 
+			    const vector<Counter *> &eCount)
 {
     double lp = tCount[prevS]->prob(state);
     //double lp = log(tCount[prevS]->count(state) + transP);
@@ -201,7 +211,7 @@ double logProbState(int state, int word, int prevS, int nextS,
     return lp;
 }
 
-void logNormalize(vector<double> &logProbs) {
+double logNormalize(vector<double> &logProbs) {
     double maxLog = *max_element(logProbs.begin(), logProbs.end());
     double logSum = 0;
     for (vector<double>::iterator pi = logProbs.begin();
@@ -211,22 +221,47 @@ void logNormalize(vector<double> &logProbs) {
 	   logSum += exp(*pi - maxLog);
     }
     logSum = maxLog + log(logSum);
-
+    return logSum;
+/*
     for (vector<double>::iterator pi = logProbs.begin();
 	 pi != logProbs.end(); ++pi)
     {
 	*pi = exp(*pi - logSum);
     }
+*/
 }
 
-int sample(const vector<double> &probs) {
+int sample(const vector<double> &probs, const double logSum) {
     double p = rand_double();
     for (int i = 0; i<probs.size(); ++i) {
-	if (p <= probs[i]) return i;
-	p -= probs[i];
+	double pi = exp(probs[i] - logSum);
+	if (p <= pi) return i;
+	p -= pi;
     }
     return -1;
 }
+
+/*
+class applyLogProb {
+    vector<double> *lp;
+    const vector<Counter *> *tCount;
+    const vector<Counter *> *eCount;
+    const int prevS, nextS, word;
+public:
+    applyLogProb(int _word, int _prevS, int _nextS,
+		 const vector<Counter *> &_tCount, 
+		 const vector<Counter *> &_eCount,
+		 vector<double> &logProbs) :
+	word(_word), prevS(_prevS), nextS(_nextS),
+	tCount(&_tCount), eCount(&_eCount), lp(&logProbs) {}
+
+    void operator()(const blocked_range<size_t> &r) const {
+	for (size_t s=r.begin(); s!=r.end(); ++s)
+	    (*lp)[s-1] = logProbState(s, word, prevS, nextS,
+				      *tCount, *eCount);
+    }
+};
+*/
 
 void updateGibbs(int i, int word, 
 		 vector<int> &assignments,
@@ -239,11 +274,21 @@ void updateGibbs(int i, int word,
     //Calculate probability of each state given surrounding and word
     // and counts without it (up to normalizing)
     vector<double> logProbs(N-1);
+    
     for (int s = 1; s<N; s++)
 	logProbs[s-1] = logProbState(s, word,
 				     assignments[i-1], assignments[i+1],
 				     tCount, eCount);
-    logNormalize(logProbs);
+    
+/*
+    static affinity_partitioner ap;
+    parallel_for(blocked_range<size_t>(1,N),
+		 applyLogProb(word, assignments[i-1],assignments[i+1],
+			      tCount, eCount, logProbs), ap);
+*/
+
+    double logSum = logNormalize(logProbs);
+
 /* 
     double sum = 0;
     for (vector<double>::iterator pi = logProbs.begin();
@@ -254,7 +299,7 @@ void updateGibbs(int i, int word,
 */
 
     //Sample from this to assign state
-    assignments[i] = sample(logProbs)+1;
+    assignments[i] = sample(logProbs, logSum)+1;
     addState(i, word, assignments, tCount, eCount);
 }
 
