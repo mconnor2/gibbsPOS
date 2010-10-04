@@ -4,7 +4,6 @@
 #include <iomanip>
 #include <vector>
 #include <set>
-#include <unordered_map>
 #include <string>
 #include <functional>
 #include <algorithm>
@@ -14,6 +13,33 @@
 #include <ctime>
 
 #include <boost/tokenizer.hpp>
+
+#if GCC_VERSION > 40302
+    #include <unordered_map>
+    typedef std::unordered_map<string, int> lexMap;
+#else
+    #include <ext/hash_map>
+
+    class string_hash {
+    /*
+     * Straight forward string hash function taken from
+     *   http://www.codeguru.com/forum/archive/index.php/t-315286.html
+     */
+    public:
+        size_t operator() (const std::string& s) const {
+            size_t h = 0;
+	    std::string::const_iterator p, p_end;
+            for (p = s.begin(), p_end = s.end(); p != p_end; ++p) {
+                //h*33+p, djb2
+                h = ((h<<5) + h) + (*p);
+            }
+            return h;
+        }
+    };
+
+    typedef __gnu_cxx::hash_map<std::string, int, string_hash> lexMap;
+#endif
+
 
 /*
 #include "tbb/tbb.h"
@@ -25,7 +51,6 @@ using namespace tbb;
 
 using namespace std;
 
-typedef unordered_map<string, int> lexMap;
 typedef pair<int, int> tags;
 typedef vector<tags> tagged;
 
@@ -53,7 +78,7 @@ class Lexicon {
 	}
 
 	string revID(int id) const {
-	    return rev[id];
+	    return rev[id-1];
 	}
 
 	int numID() const {return nextID;}
