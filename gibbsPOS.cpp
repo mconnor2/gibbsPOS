@@ -118,6 +118,10 @@ class Counter {
 	    return make_pair(max,maxi);
 	}
 
+	int unique() {
+	    return count_if(c.begin(), c.end(), bind2nd(greater<int>(),0));
+	}
+
 	int N, total;
 	double totalP;
     private:
@@ -380,7 +384,8 @@ void updateGibbs(const tagged& posData, vector<int> &assignments,
 /**
  * Greedly assign each cluster to one tag, each tag used only once.
  *  Do full greedy where I keep exclusion set of tags and
- *  exclusion set of clusters and each iteration find max mapping.
+ *  exclusion set of clusters and each iteration find max mapping that does
+ *  not use either of these.
  */
 int oneToOne (Counter **tagMap, int nTags, int nLabels) {
     set<int> cluster, labels;
@@ -489,10 +494,65 @@ void printEvaluateState(const vector<int> &assignments,
 	}
 
     cout<<"\t"<<(double)oneToOne(tagMap,N-1,nLabels-1)/words;
-
     cout<<"\t"<<(double)manyToOne(tagMap)/words;
-    
     cout<<"\t"<<VI(tagMap, labelCount, nLabels, words);
+}
+
+struct counting{
+    Counter *c;
+    counting(Counter *_c) : c(_c) {}
+    bool operator()(int a, int b) {return (c->count(a) > c->count(b));}
+};
+
+void printTopN(int N, Counter *count, const Lexicon &lex) {
+    vector<int> ind(count->N);
+    for (int i = 0; i<count->N; ++i) ind[i] = i;
+    sort(ind.begin(), ind.end(), counting(count));
+    
+    for (int i = 0; i<N; ++i) {
+	cout<<" "<<lex.revID(ind[i])<<"("<<count->count(ind[i])<<")";
+    }
+}
+
+void printStateStats(const vector<int> &assignments,
+		     const tagged &posData,
+		     const Lexicon &tagLex, const Lexicon &wordLex,
+		     const int nLabels, const int nWords)
+{
+    Counter **tagMap = new Counter*[N],
+	    **wordMap = new Counter*[N];
+    for (int i = 0; i<N; ++i) {
+	tagMap[i] = new Counter(nLabels);
+	wordMap[i] = new Counter(nWords);
+    }
+
+    int words = 0;
+    for (int i = 0; i<assignments.size(); ++i) 
+	if (posData[i].first != 0) {
+	    words++;
+	    tagMap[assignments[i]]->add(posData[i].first);
+	    wordMap[assignments[i]]->add(posData[i].second);
+	}
+
+    for (int i = 1; i<N; ++i) {
+	cout<<"State "<<i<<":"<<endl;
+	cout<<"  "<<tagMap[i]->total<<" occurences"<<endl;
+	cout<<"  "<<tagMap[i]->unique()<<" unique POS tags"<<endl;
+	cout<<"  "<<wordMap[i]->unique()<<" unique Words"<<endl;
+	    
+	cout<<"  Top 10 tags:"; printTopN(10, tagMap[i], tagLex);
+	cout<<endl;
+	    
+	cout<<"  Top 10 words:"; printTopN(10, wordMap[i], wordLex);
+	cout<<endl;
+    }
+
+    for (int i = 0; i<N; ++i) {
+	delete tagMap[i];
+	delete wordMap[i];
+    }
+    delete [] tagMap;
+    delete [] wordMap;
 }
 
 int main (int argc, char **argv) {
@@ -590,4 +650,6 @@ int main (int argc, char **argv) {
 	clock_t t = clock();
 	cout<<"\t"<<(t-start)/(double)CLOCKS_PER_SEC<<endl;
     }
+    printStateStats(assignments, posData, tagLex, wordLex, 
+		    nLabels, nWords);
 }
