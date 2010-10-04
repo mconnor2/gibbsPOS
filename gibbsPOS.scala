@@ -369,6 +369,8 @@ object gibbsPOS {
 
 	val posTxt = new POSdata(options('infile).toString)
 //	println("Loaded "+posTxt.featLexs.length+" feature sets.")
+//	println("nLabels =  "+posTxt.tagLex.numID)
+//	println("nWords =  "+posTxt.featLexs(0).numID)
 	
 	val state = new POSstate(N+1, posTxt)
 	state.initialize()
