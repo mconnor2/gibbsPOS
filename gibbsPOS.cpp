@@ -105,6 +105,7 @@ class Counter {
 		lp[id] = log(c[id] + prior);
 		totalP = log(total + N*prior);
 	    }
+	    return c[id];
 	}
 	
 	int remove(int id) {
@@ -115,6 +116,7 @@ class Counter {
 		lp[id] = log(c[id] + prior);
 		totalP = log(total + N*prior);
 	    }
+	    return c[id];
 	}
 	
 	void reset () {
