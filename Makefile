@@ -1,5 +1,7 @@
-CFLAGS = -O2 -march=core2
-CFLAGS += -std=c++0x -g
+CFLAGS = -O3 -ffast-math -march=core2 -fomit-frame-pointer -funroll-loops
+CFLAGS += -std=c++0x 
+#CFLAGS += -fprofile-generate
+#CFLAGS += -fprofile-use
 #CFLAGS += -D_DEBUG_PRINT
 
 #LIBS = -ltbb
