@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <set>
 #include <unordered_map>
 #include <string>
 #include <functional>
@@ -105,12 +106,24 @@ class Counter {
 
 	inline int max() const {return *max_element(c.begin(), c.end());}
 
+	pair<int,int> max(const set<int> &ex) const {
+	    int max = -1, maxi = -1;
+	    for (int i = 0; i<N; ++i) {
+		if (ex.count(i) > 0) continue;
+		if (c[i] > max) {
+		    max = c[i];
+		    maxi = i;
+		}
+	    }
+	    return make_pair(max,maxi);
+	}
+
 	int N, total;
 	double totalP;
-	double prior;
     private:
 	vector<int> c;
 	vector<double> lp;
+	double prior;
 };
                 
 void parsePrior(const string &optarg, vector<double> &prior) {
@@ -364,6 +377,39 @@ void updateGibbs(const tagged& posData, vector<int> &assignments,
     }
 }
 
+/**
+ * Greedly assign each cluster to one tag, each tag used only once.
+ *  Do full greedy where I keep exclusion set of tags and
+ *  exclusion set of clusters and each iteration find max mapping.
+ */
+int oneToOne (Counter **tagMap, int nTags, int nLabels) {
+    set<int> cluster, labels;
+    int correct = 0;
+    
+    for (int elim = 0; elim < nTags and elim < nLabels; ++elim) {
+	int max = -1, maxT = -1, maxL = -1;
+	for (int i = 1; i<=nTags; ++i) {
+	    if (cluster.count(i) > 0) continue;
+	    pair<int,int> c = tagMap[i]->max(labels);
+	    if (c.first > max) {
+		max = c.first;
+		maxL = c.second;
+		maxT = i;
+	    }
+	}
+	correct += max;
+	cluster.insert(maxT);
+	labels.insert(maxL);
+    }
+
+    return correct;
+}
+
+
+/**
+ *  Assign each cluster to the tag it appears with most frequently,
+ *  and call that correct.
+ */
 int manyToOne (Counter **tagMap) {
     int correct = 0;
     for (int i = 1; i<N; ++i) {
@@ -442,6 +488,8 @@ void printEvaluateState(const vector<int> &assignments,
 	    labelCount->add(posData[i].first);
 	}
 
+    cout<<"\t"<<(double)oneToOne(tagMap,N-1,nLabels-1)/words;
+
     cout<<"\t"<<(double)manyToOne(tagMap)/words;
     
     cout<<"\t"<<VI(tagMap, labelCount, nLabels, words);
@@ -503,11 +551,11 @@ int main (int argc, char **argv) {
     N+=1;
 
     if (setEPrior) {
-//	cout<<"Loading emission prior"<<endl;
+	cout<<"Emission prior "<<ePriorString<<endl;
 	parsePrior(ePriorString, emitP);
     }
     if (setTPrior) {
-//	cout<<"Loading transition prior"<<endl;
+	cout<<"Transition prior"<<tPriorString<<endl;
 	parsePrior(tPriorString, transP);
     }
 
@@ -518,8 +566,8 @@ int main (int argc, char **argv) {
     int nWords = wordLex.numID();
     int nLabels = tagLex.numID();
 
-    cout<<"nLabels = "<<nLabels<<endl;
-    cout<<"nWords = "<<nWords<<endl;
+//    cout<<"nLabels = "<<nLabels<<endl;
+//    cout<<"nWords = "<<nWords<<endl;
 
     for (int i = 0; i<N; ++i) {
 	tCount[i] = new Counter(N, transP[i]);
@@ -530,7 +578,7 @@ int main (int argc, char **argv) {
     
     cout<<fixed<<setprecision(6);
 
-    cout<<"Iteration\tMto1\tVI\tTime(s)"<<endl;
+    cout<<"Iteration\t1to1\tMto1\tVI\tTime(s)"<<endl;
     cout<<"0";
     printEvaluateState(assignments, posData, nLabels);
     cout<<"\t0"<<endl;
