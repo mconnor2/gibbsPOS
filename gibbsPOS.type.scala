@@ -24,7 +24,7 @@ object gibbsPOSType {
 	def numID = nextID //Includes the 0th ID
     }
 
-    class Counter(N:Int, prior:Double) {
+    class Counter(val N:Int, prior:Double) {
     	val c = Array.fill[Int](N)(0)
     	val lp = Array.fill[Double](N)(if (prior > 0) log(prior) else 0)
 //    	val c = ArrayBuffer.fill[Int](N)(0)
@@ -372,6 +372,34 @@ object gibbsPOSType {
     def manyToOne(tagMap:Seq[Counter]):Int = 
 	tagMap.foldLeft(0)(_+_.c.max)
 
+    //Repeatedly find the max pairing of state and tag, removing those
+    // from further consideration until all of one or the other has been
+    // assigned
+    def oneToOne(tagMap:Seq[Counter]):Int = {
+	def findMax(tags:Set[Int], labels:Set[Int], correct:Int):Int = {
+	    if (tagMap.size == tags.size || 
+		labels.size == tagMap(0).N) correct
+	    else {
+		var max = -1
+		var maxT = -1
+		var maxL = -1
+		for ((tmap, t) <- tagMap.zipWithIndex; if (!tags.contains(t))) {
+		    (for ((c, lab) <-  tmap.c.zipWithIndex
+			 if (!labels.contains(lab))) yield (c,lab)).
+			 max(Ordering.by((p:(Int,Int))=>p._1)) match {
+			case (maxC, maxLabel) => 
+			    if (maxC > max) {
+				max = maxC; maxT = t; maxL = maxLabel
+			    }
+		    }
+		}
+		findMax(tags + maxT, labels + maxL, correct + max)
+	    }
+	}
+	findMax(collection.immutable.HashSet.empty,
+		collection.immutable.HashSet.empty, 0)
+    }
+
     // Variance of mutual information between tag clusters and state clusters
     //
     //  VI(Y,T) = H(Y|T) + H(T|Y)
@@ -422,9 +450,12 @@ object gibbsPOSType {
 	    length += 1
 	}
 
+	val oneError = oneToOne(tagMap)
 	val manyError = manyToOne(tagMap)
 	val vi = VI(tagMap,tagCount,length)
-	(manyError.toDouble / length.toDouble, vi)
+
+	(oneError.toDouble / length.toDouble,
+	 manyError.toDouble / length.toDouble, vi)
     }
 
     def stateStats(state: POSstate, pos: POSdata) = {
@@ -528,17 +559,17 @@ object gibbsPOSType {
 //	println("Assignment: "+state.assign)
 	var err = evaluate(state, posTxt)
 	
-	println("Iteration\tMany2One\tVI\tTime(s)")
+	println("Iteration\tOne2One\tMany2One\tVI\tTime(s)")
 	var iteration = 0
 	val startTime = System.nanoTime
-	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+0)
+	println(iteration+"\t"+err._1+"\t"+err._2+"\t"+err._3+"\t"+0)
 	while (iteration < maxIter)  {
 	    iteration += 1
 	    gibbsType(state, posTxt)
 //	    println("Assignment: "+state.assign)
 	    err = evaluate(state, posTxt)
 //	    println("  Many to 1 error: "+err)
-	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+
+	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+err._3+"\t"+
 		    (System.nanoTime - startTime)/1e9.toDouble)
 	}
 //	stateStats(state, posTxt)
