@@ -5,16 +5,19 @@ import scala.math.{log,exp}
 
 object gibbsPOSType {
 
-    case class Word(ind:Int, prev:Int, next:Int, wf:List[Int])
+    //case class Word(ind:Int, prev:Int, next:Int, wf:List[Int])
+    case class Word(ind:Int, prev:Int, next:Int, wf:Array[Int])
 
     class POSTypeData(file:String) extends POSdata(file) {
-	def countWords(posData:List[(Int, List[Int])]) = {
+	def countWords(posData:Seq[(Int, Array[Int])]) = {
 	    val t = ArrayBuffer.fill[List[Word]](nWords)(Nil);
 	    var ind = 1;
-	    for ((_,wf1)::(t2,wf2)::(_,wf3)::Nil <- posData.sliding(3)) { 
+	    for ((t1,wf1)::(t2,wf2)::(t3,wf3)::Nil <- posData.sliding(3)) { 
 		if (t2 > 0) {
-		    val w1 = if (wf1 == Nil) 0 else wf1.head
-		    val w3 = if (wf3 == Nil) 0 else wf3.head
+		    val w1 = if (t1 == 0) 0 else wf1.head
+		    val w3 = if (t3 == 0) 0 else wf3.head
+//		    val w1 = if (wf1 == Nil) 0 else wf1.head
+//		    val w3 = if (wf3 == Nil) 0 else wf3.head
 		    t(wf2.head) = t(wf2.head) :+ Word(ind, w1, w3, wf2)
 		}
 		ind += 1
@@ -62,7 +65,7 @@ object gibbsPOSType {
 
 	    var prevS = -1
 	    for ((t,wf) <- pos.data) {
-		val s = if (wf == Nil) 0 else assign(wf.head)
+		val s = if (t == 0) 0 else assign(wf.head)
 		tCount += s
 		for ((f,i) <- wf.zipWithIndex) wEmit(s)(i) += f
 		if (prevS >= 0) tTrans(prevS) += s
@@ -257,7 +260,9 @@ object gibbsPOSType {
 		       tagCount: Counter,
 		       wordMap: ArrayBuffer[Counter]):Int = {
 	    var length = 0
-	    for ((t,w::_) <- pos.data if t > 0) {
+//	    for ((t,w::_) <- pos.data if t > 0) {
+	    for ((t,wf) <- pos.data if t > 0) {
+		val w = wf.head
 		tagMap(state.assign(w)) += t
 		wordMap(state.assign(w)) += w
 		tagCount += t

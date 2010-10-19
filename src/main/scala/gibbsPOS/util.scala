@@ -57,19 +57,22 @@ class POSdata(file:String) {
 
     //Given a line from a column file, return (tag id, feature list) pair
     //  if a blank line return (0,Nil) special marker
-    def POSColPair(line:String):(Int, List[Int]) = {
+    def POSColPair(line:String):(Int, Array[Int]) = {
 	val cols = line.split("\\s+")
-	if (cols.length < 2) (0,Nil)
+	//if (cols.length < 2) (0,Nil)
+	if (cols.length < 2) (0,Array.empty[Int])
 	else (tagLex(cols(0)),
 	      cols.tail.zipWithIndex.map(p => {
 		  if (featLexs.length <= p._2) 
 		      featLexs += new Lexicon[String]
 //		      p._1.split(',').map(featLexs(p._2).apply).toSeq
-		  featLexs(p._2)(p._1)}).toList)
+		  featLexs(p._2)(p._1)}).toArray)
     }
 
-    def load(source:Source):List[(Int, List[Int])] = 
-	List((0,Nil)) ++ source.getLines.map(POSColPair).toList
+    def load(source:Source):ArrayBuffer[(Int, Array[Int])] = 
+//	ArrayBuffer((0,Nil)) ++ source.getLines.map(POSColPair)
+	ArrayBuffer((0,Array.empty[Int])) ++ source.getLines.map(POSColPair)
+//	List((0,Nil)) ++ source.getLines.map(POSColPair).toList
     
     val data = load(Source.fromFile(file))
     val nLabels = tagLex.numID
@@ -119,7 +122,8 @@ class POSstate (val N: Int, pos: POSdata,
 
     def printData() {
 	for ((t,wf) <- pos.data) {
-	    if (wf == Nil) {
+//	    if (wf == Nil) {
+	    if (t == 0) {
 		print(t+",0=>"+assign(0)+" ")
 	    } else {
 		print(t+","+wf.head+"=>"+assign(wf.head)+" ")

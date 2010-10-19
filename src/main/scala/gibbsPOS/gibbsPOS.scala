@@ -43,14 +43,14 @@ object gibbsPOS {
 	}
 
 	//Remove state assignment at position i, which emits word w
-	def remove (wf: List[Int], i: Int) : Unit = {
+	def remove (wf: Seq[Int], i: Int) : Unit = {
 	    tTrans(assign(i-1)) -= assign(i)
 	    tTrans(assign(i)) -= assign(i+1)
 	    tCount -= assign(i)
 	    for ((f,j) <- wf.zipWithIndex) wEmit(assign(i))(j) -= f
 	}
 
-	def add(wf: List[Int], i:Int, s:Int) : Unit = {
+	def add(wf: Seq[Int], i:Int, s:Int) : Unit = {
 	    assign(i) = s
 	    tCount += s
 	    for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) += f
@@ -60,7 +60,7 @@ object gibbsPOS {
 
 	//Find log probability of selecting state s at position i, emitting
 	// word w
-	def logProb (wf: List[Int], i: Int)(s:Int) : Double = {
+	def logProb (wf: Seq[Int], i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
 	    
@@ -108,7 +108,7 @@ object gibbsPOS {
 	}
     }
 
-    def updateState(wf: List[Int], i: Int, state: POSWordState) = {
+    def updateState(wf: Seq[Int], i: Int, state: POSWordState) = {
 //	println("Updating state for word "+i)
 	//Remove counts for current assignment
 	state.remove(wf,i)
