@@ -52,7 +52,7 @@ object gibbsPOSType {
 	}
     }
 
-    class POSTypeState (override val N: Int, pos: POSdata, 
+    class POSTypeState (override val N: Int, pos: POSTypeData, 
 			transP:Array[Double], emitP:Array[Double]) extends 
 			POSstate(N, pos, transP, emitP) {
 
@@ -64,12 +64,17 @@ object gibbsPOSType {
 	    for (_ <- 1 until pos.nWords) assign += Random.nextInt(N-1)+1
 
 	    var prevS = -1
+/* 
 	    for ((t,wf) <- pos.data) {
 		val s = if (t == 0) 0 else assign(wf.head)
 		tCount += s
 		for ((f,i) <- wf.zipWithIndex) wEmit(s)(i) += f
 		if (prevS >= 0) tTrans(prevS) += s
 		prevS = s
+	    }
+*/	    
+	    for ((ws,i) <- pos.wordList.view.zipWithIndex; w <- ws if i > 0) {
+	    	addWord(assign(i), i)(w)
 	    }
 	}
 
@@ -80,7 +85,8 @@ object gibbsPOSType {
 //		println("   p assign "+assign(p)+" count: "+tTrans(assign(p))(s))
 //		println("   n assign "+assign(n)+" count: "+tTrans(s)(assign(n)))
 //		println("     -")
-		if (wc != p) tTrans(assign(p)) -= s
+		//if (wc != p) tTrans(assign(p)) -= s
+		tTrans(assign(p)) -= s
 		tTrans(s) -= assign(n)
 		tCount -= s
 		for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) -= f
@@ -98,7 +104,8 @@ object gibbsPOSType {
 //		println("   p assign "+assign(p)+" count: "+tTrans(assign(p))(s))
 //		println("   n assign "+assign(n)+" count: "+tTrans(s)(assign(n)))
 //		println("     +")
-		if (wc != p) tTrans(assign(p)) += s
+		//if (wc != p) tTrans(assign(p)) += s
+		tTrans(assign(p)) += s
 		tTrans(s) += assign(n)
 		tCount += s
 		for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) += f
@@ -249,7 +256,8 @@ object gibbsPOSType {
     //One pass through data, sampling tag for all occurences of each
     // word type. P(t|t_-i,w) which is calculated from current state
     def gibbsType(state: POSTypeState, pos: POSTypeData) : Unit =
-    	for (wt <- (1 until pos.nWords)) { //Random.shuffle((1 until pos.nWords).toIterator)) {
+    	//for (wt <- (1 until pos.nWords)) { 
+	for (wt <- Random.shuffle((1 until pos.nWords).toIterator)) {
 //	    println("Word type "+wt);
 	    updateStateType(pos.wordList(wt), wt, state)
 	}

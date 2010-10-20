@@ -69,10 +69,11 @@ class POSdata(file:String) {
 		  featLexs(p._2)(p._1)}).toArray)
     }
 
-    def load(source:Source):ArrayBuffer[(Int, Array[Int])] = 
+    def load(source:Source) = //ArrayBuffer[(Int, Array[Int])] = 
 //	ArrayBuffer((0,Nil)) ++ source.getLines.map(POSColPair)
-	ArrayBuffer((0,Array.empty[Int])) ++ source.getLines.map(POSColPair)
+//	ArrayBuffer((0,Array.empty[Int])) ++ source.getLines.map(POSColPair)
 //	List((0,Nil)) ++ source.getLines.map(POSColPair).toList
+	List((0,Array.empty[Int])) ++ source.getLines.map(POSColPair).toList
     
     val data = load(Source.fromFile(file))
     val nLabels = tagLex.numID
