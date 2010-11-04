@@ -43,14 +43,14 @@ object gibbsPOS {
 	}
 
 	//Remove state assignment at position i, which emits word w
-	def remove (wf: Seq[Int], i: Int) : Unit = {
+	def remove (wf: Iterable[Int], i: Int) : Unit = {
 	    tTrans(assign(i-1)) -= assign(i)
 	    tTrans(assign(i)) -= assign(i+1)
 	    tCount -= assign(i)
 	    for ((f,j) <- wf.zipWithIndex) wEmit(assign(i))(j) -= f
 	}
 
-	def add(wf: Seq[Int], i:Int, s:Int) : Unit = {
+	def add(wf: Iterable[Int], i:Int, s:Int) : Unit = {
 	    assign(i) = s
 	    tCount += s
 	    for ((f,j) <- wf.zipWithIndex) wEmit(s)(j) += f
@@ -60,21 +60,22 @@ object gibbsPOS {
 
 	//Find log probability of selecting state s at position i, emitting
 	// word w
-	def logProb (wf: Seq[Int], i: Int)(s:Int) : Double = {
+	def logProb (wf: Iterable[Int], i: Int)(s:Int) : Double = {
 //	    println("Log probability of assigning state "+s+
 //		    " at index "+i+" emitting word "+w)
 	    
-	    var logP = tTrans(assign(i-1)).logP(s)
+//	    var logP = tTrans(assign(i-1)).logP(s)
 	    //var logP = log(tTrans(abefore)(s) + transP(abefore))
 		  //   log(tCount(abefore) + N*transP(abefore)) //XXX Constant
 
 //	    println("  "+tTrans(assign(i-1))(s) + " # transitions from -1 to s")
-	    for ((f,j) <- wf.zipWithIndex) 
-		logP += wEmit(s)(j).logP(f) - wEmit(s)(j).totalP
+//	    for ((f,j) <- wf.zipWithIndex) 
+//		logP += wEmit(s)(j).logP(f) - wEmit(s)(j).totalP
 		//logP += log(wEmit(s)(j)(v) + emitP(s)) - 
 		//	log(wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
 
 //	    println("  "+wEmit(s)(w) + " emissions of w from s")
+/*
 	    if (assign(i-1) != s) {
 		logP + tTrans(s).logP(assign(i+1)) - tTrans(s).totalP
 	    } else {
@@ -82,14 +83,34 @@ object gibbsPOS {
 		logP + (if (assign(i+1) != s) tTrans(s).logP(assign(i+1))
 		        else log(tTrans(s)(assign(i+1)) + 1 + transP(s)))
 	    }
+*/
 //	    println("  "+tTrans(s)(assign(i+1)) + " # transitions from s to +1")
+	    0.1
+	}
+	def prob (wf: Iterable[Int], i: Int)(s:Int) : Double = {
+	    val abefore = assign(i-1)
+	    var p = (tTrans(abefore)(s) + transP(abefore)).toDouble
+		    //(tCount(abefore) + N*transP(abefore)) //XXX Constant
+
+	    for ((f,j) <- wf.zipWithIndex) 
+		p *= (wEmit(s)(j)(f) + emitP(s)).toDouble /
+		     (wEmit(s)(j).total+pos.featLexs(j).numID*emitP(s))
+	    
+	    if (assign(i-1) != s) {
+		p * (tTrans(s)(assign(i+1)) + emitP(s)) / 
+		    (tTrans(s).total + N*transP(s))
+	    } else {
+		p /= tCount(s) + 1 + N*transP(s)
+		p * (tTrans(s)(assign(i+1)) + transP(s) + 
+			(if (assign(i+1) != s) 1 else 0))
+	    }
 	}
     }
 
     //Converted from Aria Haghihi's standard ML code (as used elsewhere
 
-    def logNormalize (logs:Seq[Double]) = {
-	def logSum (logs:Seq[Double]) : Double = {
+    def logNormalize (logs:Iterable[Double]) = {
+	def logSum (logs:Iterable[Double]) : Double = {
 	    val maxLog = logs.max
 	    maxLog + log(logs.foldLeft(0.0)((b,x) => b +
 			    (if (x-maxLog > -30) exp(x-maxLog) else 0)))
@@ -97,8 +118,13 @@ object gibbsPOS {
 	val sum = logSum(logs)
 	for (x <- logs) yield exp(x-sum)
     }
-	
-    def sampleState (probs:Seq[Double]) = {
+    
+    def normalize (probs:Iterable[Double]) = {
+	val sum = probs.sum
+	for (x <- probs) yield x/sum
+    }
+
+    def sampleState (probs:Iterable[Double]) = {
 	val p = Random.nextDouble
 	//Note that scanLeft includes a 0 at the beginning of the list, 
 	// which matches well with the special 0 state, which cannot be selected
@@ -108,19 +134,21 @@ object gibbsPOS {
 	}
     }
 
-    def updateState(wf: Seq[Int], i: Int, state: POSWordState) = {
+    def updateState(wf:Iterable[Int], i: Int, state: POSWordState) = {
 //	println("Updating state for word "+i)
 	//Remove counts for current assignment
 	state.remove(wf,i)
 	//Calculate probability of each state given surrounding and word
 	// and counts without it (up to normalizing)
-	val logProbs = (1 until state.N).map(state.logProb(wf,i))
+	//val logProbs = (1 until state.N).map(state.logProb(wf,i))
+	val probs = (1 until state.N).map(state.prob(wf,i))
 //	println("Log probabilities: "+logProbs)
 //	val lognorm = logNormalize(logProbs)
 //	println("    normalized: "+lognorm)
 //	println("    sum: "+lognorm.reduceLeft(_+_))
 	//Sample from this to assign state
-	state.add(wf, i, sampleState(logNormalize(logProbs)))
+	//state.add(wf, i, sampleState(logNormalize(logProbs)))
+	state.add(wf, i, sampleState(normalize(probs)))
     }
     
     //One pass through data, sampling state for each word from the P(t|t_-i,w)
@@ -201,6 +229,6 @@ object gibbsPOS {
 	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+err._3+"\t"+
 		    (System.nanoTime - startTime)/1e9.toDouble)
 	}
-	eval.stateStats(state, posTxt)
+//	eval.stateStats(state, posTxt)
     }
 }

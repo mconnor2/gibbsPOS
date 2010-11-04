@@ -5,11 +5,11 @@ import scala.math.{log,exp}
 
 object gibbsPOSType {
 
-    //case class Word(ind:Int, prev:Int, next:Int, wf:List[Int])
-    case class Word(ind:Int, prev:Int, next:Int, wf:Array[Int])
+    case class Word(ind:Int, prev:Int, next:Int, wf:List[Int])
+    //case class Word(ind:Int, prev:Int, next:Int, wf:Array[Int])
 
     class POSTypeData(file:String) extends POSdata(file) {
-	def countWords(posData:Seq[(Int, Array[Int])]) = {
+	def countWords(posData:Seq[(Int, List[Int])]) = {
 	    val t = ArrayBuffer.fill[List[Word]](nWords)(Nil);
 	    var ind = 1;
 	    for ((t1,wf1)::(t2,wf2)::(t3,wf3)::Nil <- posData.sliding(3)) { 
@@ -351,6 +351,6 @@ object gibbsPOSType {
 	    println(iteration+"\t"+err._1+"\t"+err._2+"\t"+err._3+"\t"+
 		    (System.nanoTime - startTime)/1e9.toDouble)
 	}
-//	eval.stateStats(state, posTxt)
+	eval.stateStats(state, posTxt)
     }
 }

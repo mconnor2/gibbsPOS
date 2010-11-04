@@ -36,15 +36,15 @@ class Counter(val N:Int, prior:Double) {
     def +=(a:Int) = {
 	total += 1; 
 	c(a) = c(a) + 1
-	totalP = log(total + N*prior)
-	lp(a) = log(c(a) + prior)
+	//totalP = log(total + N*prior)
+	//lp(a) = log(c(a) + prior)
     }
     def ++=(s:Seq[Int]) = for (a <- s) {this += a}
     def -=(a:Int) = {
 	total -= 1
 	c(a) = c(a)-1
-	totalP = log(total + N*prior)
-	lp(a) = log(c(a) + prior)
+	//totalP = log(total + N*prior)
+	//lp(a) = log(c(a) + prior)
     }
     def --=(s:Seq[Int]) = for (a <- s) {this -= a}
 }
@@ -57,23 +57,23 @@ class POSdata(file:String) {
 
     //Given a line from a column file, return (tag id, feature list) pair
     //  if a blank line return (0,Nil) special marker
-    def POSColPair(line:String):(Int, Array[Int]) = {
+    def POSColPair(line:String):(Int, List[Int]) = {
 	val cols = line.split("\\s+")
-	//if (cols.length < 2) (0,Nil)
-	if (cols.length < 2) (0,Array.empty[Int])
+	if (cols.length < 2) (0,Nil)
+	//if (cols.length < 2) (0,Array.empty[Int])
 	else (tagLex(cols(0)),
 	      cols.tail.zipWithIndex.map(p => {
 		  if (featLexs.length <= p._2) 
 		      featLexs += new Lexicon[String]
 //		      p._1.split(',').map(featLexs(p._2).apply).toSeq
-		  featLexs(p._2)(p._1)}).toArray)
+		  featLexs(p._2)(p._1)}).toList)
     }
 
     def load(source:Source) = //ArrayBuffer[(Int, Array[Int])] = 
 //	ArrayBuffer((0,Nil)) ++ source.getLines.map(POSColPair)
 //	ArrayBuffer((0,Array.empty[Int])) ++ source.getLines.map(POSColPair)
-//	List((0,Nil)) ++ source.getLines.map(POSColPair).toList
-	List((0,Array.empty[Int])) ++ source.getLines.map(POSColPair).toList
+	List((0,Nil)) ++ source.getLines.map(POSColPair).toList
+//	List((0,Array.empty[Int])) ++ source.getLines.map(POSColPair).toList
     
     val data = load(Source.fromFile(file))
     val nLabels = tagLex.numID
