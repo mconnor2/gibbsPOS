@@ -14,12 +14,16 @@
 
 #include <boost/tokenizer.hpp>
 
+#define GCC_VERSION (__GNUC__ * 10000 \
+                   + __GNUC_MINOR__ * 100 \
+                   + __GNUC_PATCHLEVEL__)
+
 #if GCC_VERSION > 40302
     #include <unordered_map>
-    typedef std::unordered_map<string, int> lexMap;
+    typedef std::unordered_map<std::string, int> lexMap;
 #else
     #include <ext/hash_map>
-
+ 
     class string_hash {
     /*
      * Straight forward string hash function taken from
@@ -28,7 +32,7 @@
     public:
         size_t operator() (const std::string& s) const {
             size_t h = 0;
-	    std::string::const_iterator p, p_end;
+           std::string::const_iterator p, p_end;
             for (p = s.begin(), p_end = s.end(); p != p_end; ++p) {
                 //h*33+p, djb2
                 h = ((h<<5) + h) + (*p);
@@ -323,7 +327,7 @@ double logNormalize(vector<double> &logProbs) {
 */
 }
 
-int sample(const vector<double> &probs, const double logSum) {
+int expSample(const vector<double> &probs, const double logSum) {
     double p = rand_double();
 //    double p = rand()/(RAND_MAX+1.0);
     for (int i = 0; i<probs.size(); ++i) {
@@ -382,6 +386,7 @@ void updateGibbs(int i, int word,
 */
 
     double logSum = logNormalize(logProbs);
+    //double sum = normalize(probs);
 
 /* 
     double sum = 0;
@@ -393,7 +398,7 @@ void updateGibbs(int i, int word,
 */
 
     //Sample from this to assign state
-    assignments[i] = sample(logProbs, logSum)+1;
+    assignments[i] = expSample(logProbs, logSum)+1;
     addState(i, word, assignments, tCount, eCount);
 }
 
